@@ -1,0 +1,43 @@
+{
+    "user":{
+        "user_id" : "",
+        "company_name" : "" 
+    },
+    "showroom_design":{
+        "showroom_model_id" : 1, 
+        "ceiling":{
+            "texture_id" : 0,
+            "base_color" : "ffffff"
+        },
+        "walls":{
+            "texture_id" : 0,
+            "base_color" : "ffffff"
+        },
+        "floor":{
+            "texture_id" : 0,
+            "base_color" : "ffffff"
+        },
+        "light":{
+            "color" : "ffffff",
+            "intensity" : 15
+        } 
+    },
+    "image_panels" : {
+        "base_color" : "000000",
+        "scale" : 1.2,
+        "panel_01_enabled" : true,
+        "panel_02_enabled" : true,
+        "panel_03_enabled" : true,
+        "panel_04_enabled" : true
+    },
+    "video_panels" : {
+        "base_color" : "000000",
+        "scale" : 1,
+        "panel_01_enabled" : true,
+        "panel_02_enabled" : true
+    },
+    "3d_model" : {
+        "enabled" : true,
+        "scale" : 1
+    }
+}
