@@ -8,6 +8,12 @@ const partnerSchema = new mongoose.Schema(
     role: { type: String, enum: ['partner'], default: 'partner' },
     isActive: { type: Boolean, default: true },
     isVisibleInMetaverse: { type: Boolean, default: false },
+    profilePic: { type: String, default: null },
+    address: { type: String, trim: true, default: null },
+    country: { type: String, trim: true, default: null },
+    city: { type: String, trim: true, default: null },
+    phone: { type: String, trim: true, default: null },
+    zipCode: { type: String, trim: true, default: null },
   },
   { timestamps: true }
 );

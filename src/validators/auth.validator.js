@@ -14,6 +14,11 @@ const loginRules = [
 const updateProfileRules = [
   body('email').optional().isEmail().normalizeEmail(),
   body('companyName').optional().trim().notEmpty().withMessage('Company name cannot be empty'),
+  body('address').optional().trim().notEmpty(),
+  body('country').optional().trim().notEmpty(),
+  body('city').optional().trim().notEmpty(),
+  body('phone').optional().trim().notEmpty(),
+  body('zipCode').optional().trim().notEmpty(),
 ];
 
 const changePasswordRules = [

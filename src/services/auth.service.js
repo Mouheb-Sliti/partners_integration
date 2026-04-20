@@ -67,6 +67,11 @@ async function updateProfile(partnerId, updates) {
     }
     allowed.email = updates.email;
   }
+  if (updates.address !== undefined) allowed.address = updates.address;
+  if (updates.country !== undefined) allowed.country = updates.country;
+  if (updates.city !== undefined) allowed.city = updates.city;
+  if (updates.phone !== undefined) allowed.phone = updates.phone;
+  if (updates.zipCode !== undefined) allowed.zipCode = updates.zipCode;
 
   const partner = await Partner.findByIdAndUpdate(partnerId, allowed, { new: true }).select('-passwordHash');
   if (!partner) {
@@ -100,14 +105,32 @@ function signToken(partner) {
   );
 }
 
+async function updateProfilePic(partnerId, filePath) {
+  const partner = await Partner.findByIdAndUpdate(
+    partnerId,
+    { profilePic: filePath },
+    { new: true }
+  ).select('-passwordHash');
+  if (!partner) {
+    throw new NotFoundError('Partner');
+  }
+  return { partner };
+}
+
 function formatPartner(partner) {
   return {
     id: partner._id,
     email: partner.email,
     companyName: partner.companyName,
     role: partner.role,
+    profilePic: partner.profilePic,
+    address: partner.address,
+    country: partner.country,
+    city: partner.city,
+    phone: partner.phone,
+    zipCode: partner.zipCode,
     createdAt: partner.createdAt,
   };
 }
 
-module.exports = { register, login, getProfile, updateProfile, changePassword };
+module.exports = { register, login, getProfile, updateProfile, updateProfilePic, changePassword };

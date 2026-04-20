@@ -49,4 +49,17 @@ async function changePassword(req, res, next) {
   }
 }
 
-module.exports = { register, login, getMe, updateProfile, changePassword };
+async function updateProfilePic(req, res, next) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const filePath = `/uploads/${req.file.filename}`;
+    const result = await authService.updateProfilePic(req.partner.id, filePath);
+    success(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { register, login, getMe, updateProfile, updateProfilePic, changePassword };
