@@ -4,6 +4,7 @@ const Partner = require('../models/Partner');
 const Showroom = require('../models/Showroom');
 const config = require('../config');
 const { ConflictError, UnauthorizedError, ForbiddenError, NotFoundError } = require('../utils/errors');
+const { recomputeVisibility } = require('./metaverse.service');
 
 async function register({ email, password, companyName }) {
   const existing = await Partner.findOne({ email });
@@ -77,6 +78,10 @@ async function updateProfile(partnerId, updates) {
   if (!partner) {
     throw new NotFoundError('Partner');
   }
+
+  // Recompute metaverse visibility after profile change
+  await recomputeVisibility(partnerId);
+
   return { partner };
 }
 
@@ -114,6 +119,10 @@ async function updateProfilePic(partnerId, filePath) {
   if (!partner) {
     throw new NotFoundError('Partner');
   }
+
+  // Recompute metaverse visibility after profile pic upload
+  await recomputeVisibility(partnerId);
+
   return { partner };
 }
 

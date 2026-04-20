@@ -5,7 +5,7 @@ const Media = require('../models/Media');
 const { NotFoundError } = require('../utils/errors');
 
 async function listActivePartners() {
-  const partners = await Partner.find({ isActive: true }).select('companyName createdAt');
+  const partners = await Partner.find({ isActive: true, isVisibleInMetaverse: true }).select('companyName profilePic createdAt');
 
   const partnerIds = partners.map((p) => p._id);
   const subscriptions = await Subscription.find({ partner: { $in: partnerIds } }).populate('offer', 'name displayName');
@@ -21,6 +21,7 @@ async function listActivePartners() {
   const result = partners.map((p) => ({
     id: p._id,
     companyName: p.companyName,
+    profilePic: p.profilePic,
     subscription: subMap[p._id.toString()] || null,
     createdAt: p.createdAt,
   }));

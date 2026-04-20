@@ -149,27 +149,42 @@ async function getEligiblePartners() {
  * Recompute and persist the isVisibleInMetaverse flag for a single partner.
  */
 async function recomputeVisibility(partnerId) {
-  const sub = await Subscription.findOne({ partner: partnerId }).populate('offer');
-
-  let isVisible = false;
-
-  if (sub && sub.offer && sub.offer.isActive) {
-    const counts = await Media.aggregate([
-      { $match: { partner: new mongoose.Types.ObjectId(partnerId) } },
-      { $group: { _id: '$type', count: { $sum: 1 } } },
-    ]);
-
-    const stored = { image: 0, video: 0, '3d_object': 0 };
-    for (const c of counts) {
-      stored[c._id] = c.count;
-    }
-
-    const visibleImages = Math.min(stored.image, sub.offer.maxImages);
-    const visibleVideos = Math.min(stored.video, sub.offer.maxVideos);
-    const visible3D = Math.min(stored['3d_object'], sub.offer.max3dObjects);
-
-    isVisible = (visibleImages + visibleVideos + visible3D) > 0;
+  // Step 1: Check profile completeness
+  const partner = await Partner.findById(partnerId);
+  if (!partner || !partner.isActive) {
+    await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
+    return false;
   }
+
+  const profileComplete = !!(partner.profilePic && partner.address && partner.country && partner.city && partner.phone && partner.zipCode);
+  if (!profileComplete) {
+    await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
+    return false;
+  }
+
+  // Step 2: Check subscription to an active offer
+  const sub = await Subscription.findOne({ partner: partnerId }).populate('offer');
+  if (!sub || !sub.offer || !sub.offer.isActive) {
+    await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
+    return false;
+  }
+
+  // Step 3: Check media uploaded & visible through offer limits
+  const counts = await Media.aggregate([
+    { $match: { partner: new mongoose.Types.ObjectId(partnerId) } },
+    { $group: { _id: '$type', count: { $sum: 1 } } },
+  ]);
+
+  const stored = { image: 0, video: 0, '3d_object': 0 };
+  for (const c of counts) {
+    stored[c._id] = c.count;
+  }
+
+  const visibleImages = Math.min(stored.image, sub.offer.maxImages);
+  const visibleVideos = Math.min(stored.video, sub.offer.maxVideos);
+  const visible3D = Math.min(stored['3d_object'], sub.offer.max3dObjects);
+
+  const isVisible = (visibleImages + visibleVideos + visible3D) > 0;
 
   await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: isVisible });
 
