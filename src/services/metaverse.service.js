@@ -2,192 +2,67 @@ const mongoose = require('mongoose');
 const Subscription = require('../models/Subscription');
 const Media = require('../models/Media');
 const Partner = require('../models/Partner');
+const Showroom = require('../models/Showroom');
 
 /**
- * Returns eligible partners with their visible media projected through offer limits.
- * Uses aggregation to avoid N+1 queries.
+ * Returns eligible partners visible in the metaverse.
+ * Uses the pre-computed isVisibleInMetaverse flag.
  */
 async function getEligiblePartners() {
-  const results = await Subscription.aggregate([
-    // Step 1: Only active subscriptions
-    {
-      $lookup: {
-        from: 'offers',
-        localField: 'offer',
-        foreignField: '_id',
-        as: 'offerData',
-      },
-    },
-    { $unwind: '$offerData' },
-    { $match: { 'offerData.isActive': true } },
+  const partners = await Partner.find({ isActive: true, isVisibleInMetaverse: true })
+    .select('companyName profilePic')
+    .populate('profilePic', 'url');
 
-    // Step 2: Lookup partner info
-    {
-      $lookup: {
-        from: 'partners',
-        localField: 'partner',
-        foreignField: '_id',
-        as: 'partnerData',
-      },
-    },
-    { $unwind: '$partnerData' },
-    { $match: { 'partnerData.isActive': true } },
-
-    // Step 3: Lookup all media for this partner
-    {
-      $lookup: {
-        from: 'media',
-        localField: 'partner',
-        foreignField: 'partner',
-        as: 'allMedia',
-      },
-    },
-
-    // Step 4: Compute stored counts per type
-    {
-      $addFields: {
-        storedImages: {
-          $size: { $filter: { input: '$allMedia', as: 'm', cond: { $eq: ['$$m.type', 'image'] } } },
-        },
-        storedVideos: {
-          $size: { $filter: { input: '$allMedia', as: 'm', cond: { $eq: ['$$m.type', 'video'] } } },
-        },
-        stored3D: {
-          $size: { $filter: { input: '$allMedia', as: 'm', cond: { $eq: ['$$m.type', '3d_object'] } } },
-        },
-      },
-    },
-
-    // Step 5: Must have at least 1 stored media
-    {
-      $match: {
-        $expr: { $gt: [{ $add: ['$storedImages', '$storedVideos', '$stored3D'] }, 0] },
-      },
-    },
-
-    // Step 6: Apply offer projection
-    {
-      $addFields: {
-        visibleImages: { $min: ['$storedImages', '$offerData.maxImages'] },
-        visibleVideos: { $min: ['$storedVideos', '$offerData.maxVideos'] },
-        visible3D: { $min: ['$stored3D', '$offerData.max3dObjects'] },
-      },
-    },
-
-    // Step 7: Must have at least 1 visible media after projection
-    {
-      $match: {
-        $expr: {
-          $gt: [{ $add: ['$visibleImages', '$visibleVideos', '$visible3D'] }, 0],
-        },
-      },
-    },
-
-    // Step 8: Slice media arrays to offer limits (return only visible items)
-    {
-      $addFields: {
-        visibleMedia: {
-          image: {
-            $slice: [
-              { $filter: { input: '$allMedia', as: 'm', cond: { $eq: ['$$m.type', 'image'] } } },
-              { $min: ['$storedImages', '$offerData.maxImages'] },
-            ],
-          },
-          video: {
-            $slice: [
-              { $filter: { input: '$allMedia', as: 'm', cond: { $eq: ['$$m.type', 'video'] } } },
-              { $min: ['$storedVideos', '$offerData.maxVideos'] },
-            ],
-          },
-          '3d_object': {
-            $slice: [
-              { $filter: { input: '$allMedia', as: 'm', cond: { $eq: ['$$m.type', '3d_object'] } } },
-              { $min: ['$stored3D', '$offerData.max3dObjects'] },
-            ],
-          },
-        },
-      },
-    },
-
-    // Step 9: Lookup showroom
-    {
-      $lookup: {
-        from: 'showrooms',
-        localField: 'partner',
-        foreignField: 'partner',
-        as: 'showroomData',
-      },
-    },
-
-    // Step 10: Project final shape
-    {
-      $project: {
-        _id: 0,
-        partnerId: '$partnerData._id',
-        companyName: '$partnerData.companyName',
-        offer: {
-          name: '$offerData.name',
-          displayName: '$offerData.displayName',
-        },
-        media: {
-          counts: {
-            visibleImages: '$visibleImages',
-            visibleVideos: '$visibleVideos',
-            visible3D: '$visible3D',
-          },
-          items: '$visibleMedia',
-        },
-        showroom: { $arrayElemAt: ['$showroomData', 0] },
-      },
-    },
-  ]);
-
-  return results;
+  return partners.map((p) => ({
+    partnerId: p._id,
+    companyName: p.companyName,
+    profilePic: p.profilePic?.url || null,
+  }));
 }
 
 /**
  * Recompute and persist the isVisibleInMetaverse flag for a single partner.
+ * A partner is visible when:
+ *   1. Partner is active
+ *   2. Has an active subscription
+ *   3. Has a showroom
+ *   4. Has at least 1 media in a slot allowed by the subscription offer
  */
 async function recomputeVisibility(partnerId) {
-  // Step 1: Check profile completeness
   const partner = await Partner.findById(partnerId);
   if (!partner || !partner.isActive) {
     await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
     return false;
   }
 
-  const profileComplete = !!(partner.profilePic && partner.address && partner.country && partner.city && partner.phone && partner.zipCode);
-  if (!profileComplete) {
-    await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
-    return false;
-  }
-
-  // Step 2: Check subscription to an active offer
+  // Check subscription to an active offer
   const sub = await Subscription.findOne({ partner: partnerId }).populate('offer');
   if (!sub || !sub.offer || !sub.offer.isActive) {
     await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
     return false;
   }
 
-  // Step 3: Check media uploaded & visible through offer limits
-  const counts = await Media.aggregate([
-    { $match: { partner: new mongoose.Types.ObjectId(partnerId) } },
-    { $group: { _id: '$type', count: { $sum: 1 } } },
-  ]);
-
-  const stored = { image: 0, video: 0, '3d_object': 0 };
-  for (const c of counts) {
-    stored[c._id] = c.count;
+  // Check showroom exists
+  const showroom = await Showroom.findOne({ partner: partnerId });
+  if (!showroom) {
+    await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: false });
+    return false;
   }
 
-  const visibleImages = Math.min(stored.image, sub.offer.maxImages);
-  const visibleVideos = Math.min(stored.video, sub.offer.maxVideos);
-  const visible3D = Math.min(stored['3d_object'], sub.offer.max3dObjects);
+  // Determine allowed slots from offer limits
+  const allowedSlots = [];
+  for (let i = 1; i <= sub.offer.maxImages; i++) allowedSlots.push(`image${i}`);
+  for (let i = 1; i <= sub.offer.maxVideos; i++) allowedSlots.push(`video${i}`);
+  if (sub.offer.max3dObjects > 0) allowedSlots.push('3d_image');
 
-  const isVisible = (visibleImages + visibleVideos + visible3D) > 0;
+  // Check at least 1 media exists in an allowed slot
+  const visibleCount = await Media.countDocuments({
+    partner: partnerId,
+    slot: { $in: allowedSlots },
+  });
 
+  const isVisible = visibleCount > 0;
   await Partner.updateOne({ _id: partnerId }, { isVisibleInMetaverse: isVisible });
-
   return isVisible;
 }
 

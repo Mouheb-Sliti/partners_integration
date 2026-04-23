@@ -4,181 +4,109 @@ const Subscription = require('../models/Subscription');
 const Media = require('../models/Media');
 const { NotFoundError } = require('../utils/errors');
 
+/**
+ * Unity API 1: List all active partners visible in the metaverse.
+ * Returns companyName + profilePic URL for each.
+ */
 async function listActivePartners() {
-  const partners = await Partner.find({ isActive: true, isVisibleInMetaverse: true }).select('companyName profilePic createdAt');
-
-  const partnerIds = partners.map((p) => p._id);
-  const subscriptions = await Subscription.find({ partner: { $in: partnerIds } }).populate('offer', 'name displayName');
-
-  const subMap = {};
-  for (const s of subscriptions) {
-    subMap[s.partner.toString()] = {
-      offerName: s.offer.name,
-      displayName: s.offer.displayName,
-    };
-  }
-
-  const result = partners.map((p) => ({
-    id: p._id,
-    companyName: p.companyName,
-    profilePic: p.profilePic,
-    subscription: subMap[p._id.toString()] || null,
-    createdAt: p.createdAt,
-  }));
-
-  return { partners: result };
-}
-
-async function getPartnerShowroom(partnerId) {
-  const partner = await Partner.findOne({ _id: partnerId, isActive: true }).select('companyName');
-  if (!partner) {
-    throw new NotFoundError('Partner');
-  }
-
-  const showroom = await Showroom.findOne({ partner: partnerId })
-    .populate('image_panels.panel_01.media')
-    .populate('image_panels.panel_02.media')
-    .populate('image_panels.panel_03.media')
-    .populate('image_panels.panel_04.media')
-    .populate('video_panels.panel_01.media')
-    .populate('video_panels.panel_02.media')
-    .populate('model_3d.media');
-
-  if (!showroom) {
-    throw new NotFoundError('Showroom');
-  }
-
-  const subscription = await Subscription.findOne({ partner: partnerId }).populate('offer');
-
-  const formatPanel = (panel) => ({
-    enabled: panel?.enabled || false,
-    url: panel?.media?.url || null,
-    originalName: panel?.media?.originalName || null,
-  });
+  const partners = await Partner.find({ isActive: true, isVisibleInMetaverse: true })
+    .select('companyName profilePic')
+    .populate('profilePic', 'url');
 
   return {
-    partner: { id: partner._id, companyName: partner.companyName },
-    showroom_design: showroom.showroom_design,
-    image_panels: {
-      base_color: showroom.image_panels?.base_color || '000000',
-      scale: showroom.image_panels?.scale || 1.2,
-      panel_01: formatPanel(showroom.image_panels?.panel_01),
-      panel_02: formatPanel(showroom.image_panels?.panel_02),
-      panel_03: formatPanel(showroom.image_panels?.panel_03),
-      panel_04: formatPanel(showroom.image_panels?.panel_04),
+    partners: partners.map((p) => ({
+      id: p._id,
+      companyName: p.companyName,
+      profilePic: p.profilePic?.url || null,
+    })),
+  };
+}
+
+/**
+ * Unity API 2: Get full partner content for Unity rendering.
+ * Media and showroom panels are filtered by offer subscription limits.
+ */
+async function getPartnerContent(partnerId) {
+  // ── Partner ──
+  const partner = await Partner.findOne({ _id: partnerId, isActive: true, isVisibleInMetaverse: true })
+    .select('companyName profilePic')
+    .populate('profilePic', 'url originalName');
+  if (!partner) throw new NotFoundError('Partner');
+
+  // ── Subscription + Offer limits ──
+  const subscription = await Subscription.findOne({ partner: partnerId }).populate('offer');
+  if (!subscription || !subscription.offer) throw new NotFoundError('Subscription');
+
+  const limits = {
+    maxImages: subscription.offer.maxImages,
+    maxVideos: subscription.offer.maxVideos,
+    max3dObjects: subscription.offer.max3dObjects,
+  };
+
+  // ── Determine which slots are allowed by the offer ──
+  const allowedSlots = [];
+  for (let i = 1; i <= limits.maxImages; i++) allowedSlots.push(`image${i}`);
+  for (let i = 1; i <= limits.maxVideos; i++) allowedSlots.push(`video${i}`);
+  if (limits.max3dObjects > 0) allowedSlots.push('3d_image');
+
+  // ── Fetch media for allowed slots only ──
+  const media = await Media.find({ partner: partnerId, slot: { $in: allowedSlots } }).sort({ slot: 1 });
+  const mediaBySlot = {};
+  for (const m of media) {
+    mediaBySlot[m.slot] = { url: m.url, originalName: m.originalName, type: m.type };
+  }
+
+  // ── Showroom settings ──
+  const showroom = await Showroom.findOne({ partner: partnerId });
+
+  const formatPanel = (panel, slotName) => {
+    const isAllowed = allowedSlots.includes(slotName);
+    const item = mediaBySlot[slotName];
+    return {
+      enabled: isAllowed && (panel?.enabled || false),
+      url: isAllowed && item ? item.url : null,
+      originalName: isAllowed && item ? item.originalName : null,
+    };
+  };
+
+  return {
+    partner: {
+      id: partner._id,
+      companyName: partner.companyName,
+      profilePic: partner.profilePic?.url || null,
     },
-    video_panels: {
-      base_color: showroom.video_panels?.base_color || '000000',
-      scale: showroom.video_panels?.scale || 1,
-      panel_01: formatPanel(showroom.video_panels?.panel_01),
-      panel_02: formatPanel(showroom.video_panels?.panel_02),
+    subscription: {
+      offer: subscription.offer.name,
+      displayName: subscription.offer.displayName,
+      limits,
     },
-    '3d_model': {
-      enabled: showroom.model_3d?.enabled || false,
-      scale: showroom.model_3d?.scale || 1,
-      url: showroom.model_3d?.media?.url || null,
-      originalName: showroom.model_3d?.media?.originalName || null,
-    },
-    offer: subscription
+    showroom: showroom
       ? {
-          name: subscription.offer.name,
-          limits: {
-            maxImages: subscription.offer.maxImages,
-            maxVideos: subscription.offer.maxVideos,
-            max3dObjects: subscription.offer.max3dObjects,
+          showroom_design: showroom.showroom_design,
+          image_panels: {
+            base_color: showroom.image_panels?.base_color || '000000',
+            scale: showroom.image_panels?.scale || 1.2,
+            panel_01: formatPanel(showroom.image_panels?.panel_01, 'image1'),
+            panel_02: formatPanel(showroom.image_panels?.panel_02, 'image2'),
+            panel_03: formatPanel(showroom.image_panels?.panel_03, 'image3'),
+            panel_04: formatPanel(showroom.image_panels?.panel_04, 'image4'),
+          },
+          video_panels: {
+            base_color: showroom.video_panels?.base_color || '000000',
+            scale: showroom.video_panels?.scale || 1,
+            panel_01: formatPanel(showroom.video_panels?.panel_01, 'video1'),
+            panel_02: formatPanel(showroom.video_panels?.panel_02, 'video2'),
+          },
+          '3d_model': {
+            enabled: allowedSlots.includes('3d_image') && (showroom.model_3d?.enabled || false),
+            scale: showroom.model_3d?.scale || 1,
+            url: mediaBySlot['3d_image']?.url || null,
+            originalName: mediaBySlot['3d_image']?.originalName || null,
           },
         }
       : null,
+    media: mediaBySlot,
   };
 }
 
-module.exports = { listActivePartners, getPartnerShowroom, getPartnerContent };
-
-/**
- * GET /unity/partners/:id/content
- * Returns the full partner content for Unity: profile, subscription, media library, and showroom settings.
- */
-async function getPartnerContent(partnerId) {
-  // ── Profile ──
-  const partner = await Partner.findOne({ _id: partnerId, isActive: true })
-    .select('-passwordHash');
-  if (!partner) throw new NotFoundError('Partner');
-
-  // ── Subscription + Offer ──
-  const subscription = await Subscription.findOne({ partner: partnerId }).populate('offer');
-
-  // ── Media Library ──
-  const allMedia = await Media.find({ partner: partnerId }).sort({ createdAt: 1 });
-
-  const images = allMedia.filter((m) => m.type === 'image');
-  const videos = allMedia.filter((m) => m.type === 'video');
-  const objects3d = allMedia.filter((m) => m.type === '3d_object');
-
-  // ── Showroom (new schema → populate media refs) ──
-  const showroom = await Showroom.findOne({ partner: partnerId })
-    .populate('image_panels.panel_01.media')
-    .populate('image_panels.panel_02.media')
-    .populate('image_panels.panel_03.media')
-    .populate('image_panels.panel_04.media')
-    .populate('video_panels.panel_01.media')
-    .populate('video_panels.panel_02.media')
-    .populate('model_3d.media');
-
-  // Build Unity-compatible showroom block
-  const formatPanel = (panel) => ({
-    enabled: panel?.enabled || false,
-    url: panel?.media?.url || null,
-    originalName: panel?.media?.originalName || null,
-  });
-
-  const showroomBlock = showroom
-    ? {
-        showroom_design: showroom.showroom_design,
-        image_panels: {
-          base_color: showroom.image_panels?.base_color || '000000',
-          scale: showroom.image_panels?.scale || 1.2,
-          panel_01: formatPanel(showroom.image_panels?.panel_01),
-          panel_02: formatPanel(showroom.image_panels?.panel_02),
-          panel_03: formatPanel(showroom.image_panels?.panel_03),
-          panel_04: formatPanel(showroom.image_panels?.panel_04),
-        },
-        video_panels: {
-          base_color: showroom.video_panels?.base_color || '000000',
-          scale: showroom.video_panels?.scale || 1,
-          panel_01: formatPanel(showroom.video_panels?.panel_01),
-          panel_02: formatPanel(showroom.video_panels?.panel_02),
-        },
-        '3d_model': {
-          enabled: showroom.model_3d?.enabled || false,
-          scale: showroom.model_3d?.scale || 1,
-          url: showroom.model_3d?.media?.url || null,
-          originalName: showroom.model_3d?.media?.originalName || null,
-        },
-        createdAt: showroom.createdAt,
-        updatedAt: showroom.updatedAt,
-      }
-    : null;
-
-  return {
-    profile: partner,
-    subscription: subscription
-      ? {
-          _id: subscription._id,
-          offer: subscription.offer,
-          subscribedAt: subscription.subscribedAt,
-        }
-      : null,
-    media: {
-      images,
-      videos,
-      objects3d,
-      counts: {
-        images: images.length,
-        videos: videos.length,
-        objects3d: objects3d.length,
-        total: allMedia.length,
-      },
-    },
-    showroom: showroomBlock,
-  };
-}
+module.exports = { listActivePartners, getPartnerContent };

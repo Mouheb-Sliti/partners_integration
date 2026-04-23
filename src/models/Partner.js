@@ -8,7 +8,7 @@ const partnerSchema = new mongoose.Schema(
     role: { type: String, enum: ['partner'], default: 'partner' },
     isActive: { type: Boolean, default: true },
     isVisibleInMetaverse: { type: Boolean, default: false },
-    profilePic: { type: String, default: null },
+    profilePic: { type: mongoose.Schema.Types.ObjectId, ref: 'Media', default: null },
     address: { type: String, trim: true, default: null },
     country: { type: String, trim: true, default: null },
     city: { type: String, trim: true, default: null },

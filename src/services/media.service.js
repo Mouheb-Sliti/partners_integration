@@ -1,166 +1,100 @@
 const path = require('path');
 const fs = require('fs');
 const Media = require('../models/Media');
+const Partner = require('../models/Partner');
 const Showroom = require('../models/Showroom');
-const Subscription = require('../models/Subscription');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { recomputeVisibility } = require('./metaverse.service');
 
-const DEFAULT_LIMITS = { image: 4, video: 2, '3d_object': 1 };
+// Maps each slot name to its media type
+const SLOT_TYPE_MAP = {
+  image1: 'image', image2: 'image', image3: 'image', image4: 'image',
+  video1: 'video', video2: 'video',
+  '3d_image': '3d_object',
+  profile_image: 'image',
+};
 
-function getMediaType(originalname) {
-  const ext = path.extname(originalname).toLowerCase();
-  if (['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext)) return 'image';
-  if (['.mp4', '.webm', '.mov'].includes(ext)) return 'video';
-  if (['.glb', '.gltf', '.obj', '.fbx'].includes(ext)) return '3d_object';
-  return null;
-}
-
-async function getUploadLimits(partnerId) {
-  const subscription = await Subscription.findOne({ partner: partnerId }).populate('offer');
-  if (subscription && subscription.offer) {
-    return {
-      image: subscription.offer.maxImages,
-      video: subscription.offer.maxVideos,
-      '3d_object': subscription.offer.max3dObjects,
-    };
-  }
-  return DEFAULT_LIMITS;
-}
+// Maps media slots to their corresponding showroom panel paths
+const SLOT_TO_SHOWROOM = {
+  image1: 'image_panels.panel_01',
+  image2: 'image_panels.panel_02',
+  image3: 'image_panels.panel_03',
+  image4: 'image_panels.panel_04',
+  video1: 'video_panels.panel_01',
+  video2: 'video_panels.panel_02',
+  '3d_image': 'model_3d',
+};
 
 async function listMedia(partnerId) {
-  const media = await Media.find({ partner: partnerId }).sort({ createdAt: -1 });
+  const media = await Media.find({ partner: partnerId }).sort({ slot: 1 });
+  const partner = await Partner.findById(partnerId).select('profilePic').populate('profilePic');
 
-  const grouped = { image: [], video: [], '3d_object': [] };
+  const bySlot = {};
   for (const m of media) {
-    grouped[m.type].push(m);
+    if (m.slot !== 'profile_image') {
+      bySlot[m.slot] = m;
+    }
   }
 
   return {
-    total: media.length,
-    counts: {
-      image: grouped.image.length,
-      video: grouped.video.length,
-      '3d_object': grouped['3d_object'].length,
-    },
-    media: grouped,
+    total: media.filter((m) => m.slot !== 'profile_image').length,
+    profile_image: partner.profilePic
+      ? { url: partner.profilePic.url, originalName: partner.profilePic.originalName }
+      : null,
+    media: bySlot,
   };
 }
 
 /**
- * Batch upload media files with replace-per-type strategy.
+ * Upload a single file to a named slot. Replaces existing file in that slot.
  * @param {string} partnerId
- * @param {Array} files - multer files array
+ * @param {Object} file - multer file object
+ * @param {string} slot - slot name (image1..4, video1..2, 3d_image, profile_image)
  * @param {string} uploadDir - path to upload directory
- * @param {string} mode - "replace" (default) or "append"
  */
-async function uploadMedia(partnerId, files, uploadDir, mode = 'replace') {
-  if (!files || files.length === 0) {
-    throw new ValidationError('No files provided');
-  }
-
-  // Step 1 — Classify files by type
-  const classified = { image: [], video: [], '3d_object': [] };
-  const unsupported = [];
-
-  for (const file of files) {
-    const type = getMediaType(file.originalname);
-    if (!type) {
-      unsupported.push(file);
-    } else {
-      classified[type].push(file);
-    }
-  }
-
-  // Cleanup unsupported files from disk immediately
-  for (const file of unsupported) {
+async function uploadMedia(partnerId, file, slot, uploadDir) {
+  const type = SLOT_TYPE_MAP[slot];
+  if (!type) {
     cleanupFile(file.path);
+    throw new ValidationError(`Invalid slot: ${slot}`);
   }
 
-  if (unsupported.length > 0 && Object.values(classified).every(arr => arr.length === 0)) {
-    throw new ValidationError('All uploaded files have unsupported types');
+  // Replace existing file in this slot
+  const existing = await Media.findOne({ partner: partnerId, slot });
+  if (existing) {
+    cleanupFile(path.join(uploadDir, existing.filename));
+    await existing.deleteOne();
   }
 
-  // Step 2 — Validate against offer limits
-  const limits = await getUploadLimits(partnerId);
-  const errors = [];
+  // Create new media document
+  const media = await Media.create({
+    partner: partnerId,
+    type,
+    slot,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    fileSize: file.size,
+    filename: file.filename,
+    url: `/uploads/${file.filename}`,
+  });
 
-  for (const type of ['image', 'video', '3d_object']) {
-    if (classified[type].length === 0) continue;
-
-    if (mode === 'replace') {
-      // In replace mode, new batch count must not exceed the limit
-      if (classified[type].length > limits[type]) {
-        errors.push(`${type}: uploading ${classified[type].length}, max allowed ${limits[type]}`);
-      }
-    } else {
-      // In append mode, existing + new must not exceed the limit
-      const existing = await Media.countDocuments({ partner: partnerId, type });
-      if (existing + classified[type].length > limits[type]) {
-        errors.push(`${type}: existing ${existing} + uploading ${classified[type].length} exceeds max ${limits[type]}`);
-      }
-    }
+  // Handle profile_image → update Partner.profilePic ref
+  if (slot === 'profile_image') {
+    await Partner.findByIdAndUpdate(partnerId, { profilePic: media._id });
   }
 
-  if (errors.length > 0) {
-    // Cleanup all uploaded files on validation failure
-    for (const type of ['image', 'video', '3d_object']) {
-      for (const file of classified[type]) {
-        cleanupFile(file.path);
-      }
-    }
-    throw new ValidationError(`Upload limit exceeded: ${errors.join('; ')}`);
+  // Auto-link to showroom panel
+  const showroomPath = SLOT_TO_SHOWROOM[slot];
+  if (showroomPath) {
+    await Showroom.findOneAndUpdate(
+      { partner: partnerId },
+      { [`${showroomPath}.media`]: media._id, [`${showroomPath}.enabled`]: true }
+    );
   }
 
-  // Step 3 — Replace per type (delete old, save new)
-  const typesProcessed = [];
-  const savedMedia = [];
-
-  for (const type of ['image', 'video', '3d_object']) {
-    if (classified[type].length === 0) continue;
-
-    if (mode === 'replace') {
-      // Delete all existing media of this type for the partner
-      const oldMedia = await Media.find({ partner: partnerId, type });
-      for (const old of oldMedia) {
-        const filePath = path.join(uploadDir, old.filename);
-        cleanupFile(filePath);
-        // Remove from showroom slots
-        await Showroom.updateOne(
-          { partner: partnerId },
-          { $pull: { slots: { media: old._id } } }
-        );
-      }
-      await Media.deleteMany({ partner: partnerId, type });
-    }
-
-    // Save new files
-    for (const file of classified[type]) {
-      const media = await Media.create({
-        partner: partnerId,
-        type,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        fileSize: file.size,
-        filename: file.filename,
-        url: `/uploads/${file.filename}`,
-      });
-      savedMedia.push(media);
-    }
-
-    typesProcessed.push(type);
-  }
-
-  // Recompute metaverse visibility after upload
   await recomputeVisibility(partnerId);
 
-  return {
-    mode,
-    typesProcessed,
-    uploaded: savedMedia.length,
-    rejected: unsupported.length,
-    media: savedMedia,
-  };
+  return { slot, media };
 }
 
 async function deleteMedia(partnerId, mediaId, uploadDir) {
@@ -170,20 +104,23 @@ async function deleteMedia(partnerId, mediaId, uploadDir) {
   }
 
   // Remove file from disk
-  const filePath = path.join(uploadDir, media.filename);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
+  cleanupFile(path.join(uploadDir, media.filename));
+
+  // If profile_image, clear partner ref
+  if (media.slot === 'profile_image') {
+    await Partner.findByIdAndUpdate(partnerId, { profilePic: null });
   }
 
-  // Remove from showroom slots
-  await Showroom.updateOne(
-    { partner: partnerId },
-    { $pull: { slots: { media: media._id } } }
-  );
+  // Clear showroom panel
+  const showroomPath = SLOT_TO_SHOWROOM[media.slot];
+  if (showroomPath) {
+    await Showroom.findOneAndUpdate(
+      { partner: partnerId },
+      { [`${showroomPath}.media`]: null, [`${showroomPath}.enabled`]: false }
+    );
+  }
 
   await media.deleteOne();
-
-  // Recompute metaverse visibility after deletion
   await recomputeVisibility(partnerId);
 
   return { message: 'Media deleted' };
@@ -197,4 +134,4 @@ function cleanupFile(filePath) {
   }
 }
 
-module.exports = { listMedia, uploadMedia, deleteMedia, getMediaType, getUploadLimits };
+module.exports = { listMedia, uploadMedia, deleteMedia };

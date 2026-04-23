@@ -10,15 +10,6 @@ async function listPartners(req, res, next) {
   }
 }
 
-async function getPartnerShowroom(req, res, next) {
-  try {
-    const result = await unityService.getPartnerShowroom(req.params.id);
-    success(res, result);
-  } catch (err) {
-    next(err);
-  }
-}
-
 async function getPartnerContent(req, res, next) {
   try {
     const result = await unityService.getPartnerContent(req.params.id);
@@ -28,4 +19,4 @@ async function getPartnerContent(req, res, next) {
   }
 }
 
-module.exports = { listPartners, getPartnerShowroom, getPartnerContent };
+module.exports = { listPartners, getPartnerContent };

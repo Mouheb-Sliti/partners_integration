@@ -11,6 +11,15 @@ const router = express.Router();
 // Ensure upload directory exists
 fs.mkdirSync(config.upload.dir, { recursive: true });
 
+// Valid upload slots
+const VALID_SLOTS = ['image1', 'image2', 'image3', 'image4', 'video1', 'video2', '3d_image', 'profile_image'];
+const UPLOAD_FIELDS = VALID_SLOTS.map((name) => ({ name, maxCount: 1 }));
+
+// Allowed extensions per slot type
+const IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
+const VIDEO_EXTS = ['.mp4', '.webm', '.mov'];
+const OBJECT_EXTS = ['.glb', '.gltf', '.obj', '.fbx'];
+
 // Multer config — store on local disk
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, config.upload.dir),
@@ -25,26 +34,23 @@ const upload = multer({
   storage,
   limits: { fileSize: config.upload.maxFileSize },
   fileFilter: (_req, file, cb) => {
-    const allowed = {
-      image: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
-      video: ['.mp4', '.webm', '.mov'],
-      '3d_object': ['.glb', '.gltf', '.obj', '.fbx'],
-    };
     const ext = path.extname(file.originalname).toLowerCase();
-    const allExts = [...allowed.image, ...allowed.video, ...allowed['3d_object']];
-    if (allExts.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`File type ${ext} is not allowed`));
-    }
+    const field = file.fieldname;
+
+    // Per-slot type validation
+    if ((field.startsWith('image') || field === 'profile_image') && IMAGE_EXTS.includes(ext)) return cb(null, true);
+    if (field.startsWith('video') && VIDEO_EXTS.includes(ext)) return cb(null, true);
+    if (field === '3d_image' && OBJECT_EXTS.includes(ext)) return cb(null, true);
+
+    cb(new Error(`File type ${ext} is not allowed for field ${field}`));
   },
 });
 
 // GET /media — list partner's uploaded media
 router.get('/', authenticate, mediaController.listMedia);
 
-// POST /media — batch upload media files (replaces per type by default)
-router.post('/', authenticate, upload.array('files', 10), mediaController.uploadMedia);
+// POST /media — upload a single file to a named slot (image1..4, video1..2, 3d_image, profile_image)
+router.post('/', authenticate, upload.fields(UPLOAD_FIELDS), mediaController.uploadMedia);
 
 // DELETE /media/:id — delete a media file
 router.delete('/:id', authenticate, mediaController.deleteMedia);

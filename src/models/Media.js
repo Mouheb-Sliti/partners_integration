@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
 
+const VALID_SLOTS = ['image1', 'image2', 'image3', 'image4', 'video1', 'video2', '3d_image', 'profile_image'];
+
 const mediaSchema = new mongoose.Schema(
   {
     partner: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', required: true, index: true },
     type: { type: String, enum: ['image', 'video', '3d_object'], required: true },
+    slot: { type: String, enum: VALID_SLOTS, required: true },
     originalName: { type: String, required: true },
     mimeType: { type: String, required: true },
     fileSize: { type: Number, required: true },
@@ -13,6 +16,6 @@ const mediaSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-mediaSchema.index({ partner: 1, type: 1 });
+mediaSchema.index({ partner: 1, slot: 1 }, { unique: true });
 
 module.exports = mongoose.model('Media', mediaSchema);

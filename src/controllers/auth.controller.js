@@ -1,4 +1,6 @@
 const authService = require('../services/auth.service');
+const mediaService = require('../services/media.service');
+const config = require('../config');
 const { success, created } = require('../utils/response');
 
 async function register(req, res, next) {
@@ -54,8 +56,7 @@ async function updateProfilePic(req, res, next) {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    const filePath = `/uploads/${req.file.filename}`;
-    const result = await authService.updateProfilePic(req.partner.id, filePath);
+    const result = await mediaService.uploadMedia(req.partner.id, req.file, 'profile_image', config.upload.dir);
     success(res, result);
   } catch (err) {
     next(err);

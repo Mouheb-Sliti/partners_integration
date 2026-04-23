@@ -7,9 +7,9 @@ const offers = [
   {
     name: 'media',
     displayName: 'Media Offer',
-    description: 'Limited content exposure – up to 2 images only.',
+    description: 'Limited content exposure – up to 2 images and 1 video.',
     maxImages: 2,
-    maxVideos: 0,
+    maxVideos: 1,
     max3dObjects: 0,
     isActive: true,
   },

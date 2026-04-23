@@ -50,7 +50,7 @@ async function login({ email, password }) {
 }
 
 async function getProfile(partnerId) {
-  const partner = await Partner.findById(partnerId).select('-passwordHash');
+  const partner = await Partner.findById(partnerId).select('-passwordHash').populate('profilePic');
   if (!partner) {
     throw new NotFoundError('Partner');
   }
@@ -110,29 +110,13 @@ function signToken(partner) {
   );
 }
 
-async function updateProfilePic(partnerId, filePath) {
-  const partner = await Partner.findByIdAndUpdate(
-    partnerId,
-    { profilePic: filePath },
-    { new: true }
-  ).select('-passwordHash');
-  if (!partner) {
-    throw new NotFoundError('Partner');
-  }
-
-  // Recompute metaverse visibility after profile pic upload
-  await recomputeVisibility(partnerId);
-
-  return { partner };
-}
-
 function formatPartner(partner) {
   return {
     id: partner._id,
     email: partner.email,
     companyName: partner.companyName,
     role: partner.role,
-    profilePic: partner.profilePic,
+    profilePic: partner.profilePic ? (partner.profilePic.url || partner.profilePic) : null,
     address: partner.address,
     country: partner.country,
     city: partner.city,
@@ -142,4 +126,4 @@ function formatPartner(partner) {
   };
 }
 
-module.exports = { register, login, getProfile, updateProfile, updateProfilePic, changePassword };
+module.exports = { register, login, getProfile, updateProfile, changePassword };
