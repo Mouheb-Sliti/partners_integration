@@ -53,7 +53,7 @@ async function recomputeVisibility(partnerId) {
   const allowedSlots = [];
   for (let i = 1; i <= sub.offer.maxImages; i++) allowedSlots.push(`image${i}`);
   for (let i = 1; i <= sub.offer.maxVideos; i++) allowedSlots.push(`video${i}`);
-  if (sub.offer.max3dObjects > 0) allowedSlots.push('3d_image');
+  if (sub.offer.max3dObjects > 0) allowedSlots.push('3dmodel');
 
   // Check at least 1 media exists in an allowed slot
   const visibleCount = await Media.countDocuments({

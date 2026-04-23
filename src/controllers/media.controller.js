@@ -2,7 +2,7 @@ const mediaService = require('../services/media.service');
 const config = require('../config');
 const { success, created } = require('../utils/response');
 
-const VALID_SLOTS = ['image1', 'image2', 'image3', 'image4', 'video1', 'video2', '3d_image', 'profile_image'];
+const VALID_SLOTS = ['image1', 'image2', 'image3', 'image4', 'video1', 'video2', '3dmodel', 'profile_image'];
 
 async function listMedia(req, res, next) {
   try {
@@ -15,14 +15,18 @@ async function listMedia(req, res, next) {
 
 async function uploadMedia(req, res, next) {
   try {
-    // Find which slot was sent
-    const slot = VALID_SLOTS.find((s) => req.files[s] && req.files[s].length > 0);
-    if (!slot) {
+    const presentSlots = VALID_SLOTS.filter((s) => req.files[s] && req.files[s].length > 0);
+    if (presentSlots.length === 0) {
       return res.status(400).json({ error: 'No valid file field provided. Use one of: ' + VALID_SLOTS.join(', ') });
     }
-    const file = req.files[slot][0];
-    const result = await mediaService.uploadMedia(req.partner.id, file, slot, config.upload.dir);
-    created(res, result);
+
+    const results = await Promise.all(
+      presentSlots.map((slot) =>
+        mediaService.uploadMedia(req.partner.id, req.files[slot][0], slot, config.upload.dir)
+      )
+    );
+
+    created(res, results.length === 1 ? results[0] : results);
   } catch (err) {
     next(err);
   }

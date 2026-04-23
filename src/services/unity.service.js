@@ -47,7 +47,7 @@ async function getPartnerContent(partnerId) {
   const allowedSlots = [];
   for (let i = 1; i <= limits.maxImages; i++) allowedSlots.push(`image${i}`);
   for (let i = 1; i <= limits.maxVideos; i++) allowedSlots.push(`video${i}`);
-  if (limits.max3dObjects > 0) allowedSlots.push('3d_image');
+  if (limits.max3dObjects > 0) allowedSlots.push('3dmodel');
 
   // ── Fetch media for allowed slots only ──
   const media = await Media.find({ partner: partnerId, slot: { $in: allowedSlots } }).sort({ slot: 1 });
@@ -98,10 +98,10 @@ async function getPartnerContent(partnerId) {
             panel_02: formatPanel(showroom.video_panels?.panel_02, 'video2'),
           },
           '3d_model': {
-            enabled: allowedSlots.includes('3d_image') && (showroom.model_3d?.enabled || false),
+            enabled: allowedSlots.includes('3dmodel') && (showroom.model_3d?.enabled || false),
             scale: showroom.model_3d?.scale || 1,
-            url: mediaBySlot['3d_image']?.url || null,
-            originalName: mediaBySlot['3d_image']?.originalName || null,
+            url: mediaBySlot['3dmodel']?.url || null,
+            originalName: mediaBySlot['3dmodel']?.originalName || null,
           },
         }
       : null,

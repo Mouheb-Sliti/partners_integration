@@ -10,7 +10,7 @@ const { recomputeVisibility } = require('./metaverse.service');
 const SLOT_TYPE_MAP = {
   image1: 'image', image2: 'image', image3: 'image', image4: 'image',
   video1: 'video', video2: 'video',
-  '3d_image': '3d_object',
+  '3dmodel': '3dmodel',
   profile_image: 'image',
 };
 
@@ -22,7 +22,7 @@ const SLOT_TO_SHOWROOM = {
   image4: 'image_panels.panel_04',
   video1: 'video_panels.panel_01',
   video2: 'video_panels.panel_02',
-  '3d_image': 'model_3d',
+  '3dmodel': 'model_3d',
 };
 
 async function listMedia(partnerId) {
@@ -49,7 +49,7 @@ async function listMedia(partnerId) {
  * Upload a single file to a named slot. Replaces existing file in that slot.
  * @param {string} partnerId
  * @param {Object} file - multer file object
- * @param {string} slot - slot name (image1..4, video1..2, 3d_image, profile_image)
+ * @param {string} slot - slot name (image1..4, video1..2, 3dmodel, profile_image)
  * @param {string} uploadDir - path to upload directory
  */
 async function uploadMedia(partnerId, file, slot, uploadDir) {

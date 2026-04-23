@@ -12,7 +12,7 @@ const router = express.Router();
 fs.mkdirSync(config.upload.dir, { recursive: true });
 
 // Valid upload slots
-const VALID_SLOTS = ['image1', 'image2', 'image3', 'image4', 'video1', 'video2', '3d_image', 'profile_image'];
+const VALID_SLOTS = ['image1', 'image2', 'image3', 'image4', 'video1', 'video2', '3dmodel', 'profile_image'];
 const UPLOAD_FIELDS = VALID_SLOTS.map((name) => ({ name, maxCount: 1 }));
 
 // Allowed extensions per slot type
@@ -40,7 +40,7 @@ const upload = multer({
     // Per-slot type validation
     if ((field.startsWith('image') || field === 'profile_image') && IMAGE_EXTS.includes(ext)) return cb(null, true);
     if (field.startsWith('video') && VIDEO_EXTS.includes(ext)) return cb(null, true);
-    if (field === '3d_image' && OBJECT_EXTS.includes(ext)) return cb(null, true);
+    if (field === '3dmodel' && OBJECT_EXTS.includes(ext)) return cb(null, true);
 
     cb(new Error(`File type ${ext} is not allowed for field ${field}`));
   },
@@ -49,7 +49,7 @@ const upload = multer({
 // GET /media — list partner's uploaded media
 router.get('/', authenticate, mediaController.listMedia);
 
-// POST /media — upload a single file to a named slot (image1..4, video1..2, 3d_image, profile_image)
+// POST /media — upload a single file to a named slot (image1..4, video1..2, 3dmodel, profile_image)
 router.post('/', authenticate, upload.fields(UPLOAD_FIELDS), mediaController.uploadMedia);
 
 // DELETE /media/:id — delete a media file
