@@ -10,22 +10,16 @@ async function getShowroom(req, res, next) {
   }
 }
 
-async function updateLayout(req, res, next) {
+async function saveShowroom(req, res, next) {
   try {
-    const result = await showroomService.updateLayout(req.partner.id, req.body.layoutConfig);
+    if (!req.body.showroom || typeof req.body.showroom !== 'object') {
+      return res.status(400).json({ error: 'showroom must be a JSON object' });
+    }
+    const result = await showroomService.saveShowroom(req.partner.id, req.body.showroom);
     success(res, result);
   } catch (err) {
     next(err);
   }
 }
 
-async function updateSlots(req, res, next) {
-  try {
-    const result = await showroomService.updateSlots(req.partner.id, req.body.slots);
-    success(res, result);
-  } catch (err) {
-    next(err);
-  }
-}
-
-module.exports = { getShowroom, updateLayout, updateSlots };
+module.exports = { getShowroom, saveShowroom };

@@ -7,10 +7,7 @@ const router = express.Router();
 // GET /showroom — get partner's showroom config
 router.get('/', authenticate, showroomController.getShowroom);
 
-// PUT /showroom — update showroom layout config
-router.put('/', authenticate, showroomController.updateLayout);
-
-// PUT /showroom/slots — assign media to showroom slots
-router.put('/slots', authenticate, showroomController.updateSlots);
+// PUT /showroom — save the full showroom config (design + panels + 3d model)
+router.put('/', authenticate, showroomController.saveShowroom);
 
 module.exports = router;

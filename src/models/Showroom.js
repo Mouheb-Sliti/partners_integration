@@ -25,23 +25,23 @@ const showroomSchema = new mongoose.Schema(
     image_panels: {
       base_color: { type: String, default: '000000' },
       scale: { type: Number, default: 1.2 },
-      panel_01: { enabled: { type: Boolean, default: false }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
-      panel_02: { enabled: { type: Boolean, default: false }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
-      panel_03: { enabled: { type: Boolean, default: false }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
-      panel_04: { enabled: { type: Boolean, default: false }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
+      panel_01: { enabled: { type: Boolean, default: true }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
+      panel_02: { enabled: { type: Boolean, default: true }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
+      panel_03: { enabled: { type: Boolean, default: true }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
+      panel_04: { enabled: { type: Boolean, default: true }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
     },
 
     // ── Video panels (up to 2) ──
     video_panels: {
       base_color: { type: String, default: '000000' },
       scale: { type: Number, default: 1 },
-      panel_01: { enabled: { type: Boolean, default: false }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
-      panel_02: { enabled: { type: Boolean, default: false }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
+      panel_01: { enabled: { type: Boolean, default: true }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
+      panel_02: { enabled: { type: Boolean, default: true }, media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' } },
     },
 
     // ── 3D model (single) ──
     model_3d: {
-      enabled: { type: Boolean, default: false },
+      enabled: { type: Boolean, default: true },
       scale: { type: Number, default: 1 },
       media: { type: mongoose.Schema.Types.ObjectId, ref: 'Media' },
     },
