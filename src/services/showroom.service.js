@@ -9,10 +9,33 @@ function validateColor(value, field) {
   }
 }
 
+// Fields that must never appear in showroom design responses
+const MEDIA_UNSET_FIELDS = [
+  'image_panels.panel_01.media',
+  'image_panels.panel_02.media',
+  'image_panels.panel_03.media',
+  'image_panels.panel_04.media',
+  'video_panels.panel_01.media',
+  'video_panels.panel_02.media',
+  'model_3d.media',
+];
+
+function stripMedia(doc) {
+  const obj = doc.toObject();
+  ['panel_01', 'panel_02', 'panel_03', 'panel_04'].forEach((p) => {
+    if (obj.image_panels?.[p]) delete obj.image_panels[p].media;
+  });
+  ['panel_01', 'panel_02'].forEach((p) => {
+    if (obj.video_panels?.[p]) delete obj.video_panels[p].media;
+  });
+  if (obj.model_3d) delete obj.model_3d.media;
+  return obj;
+}
+
 async function getShowroom(partnerId) {
   const showroom = await Showroom.findOne({ partner: partnerId });
   if (!showroom) throw new NotFoundError('Showroom');
-  return { showroom };
+  return { showroom: stripMedia(showroom) };
 }
 
 async function saveShowroom(partnerId, showroomData) {
@@ -64,13 +87,17 @@ async function saveShowroom(partnerId, showroomData) {
     update['model_3d.scale']   = model_3d.scale   ?? 1;
   }
 
+  // Build $unset — permanently remove any media refs stored in old documents
+  const unset = {};
+  MEDIA_UNSET_FIELDS.forEach((f) => { unset[f] = ''; });
+
   const showroom = await Showroom.findOneAndUpdate(
     { partner: partnerId },
-    { $set: update },
+    { $set: update, $unset: unset },
     { new: true, upsert: true }
   );
 
-  return { showroom };
+  return { showroom: stripMedia(showroom) };
 }
 
 module.exports = { getShowroom, saveShowroom };
