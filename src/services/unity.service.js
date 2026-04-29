@@ -1,12 +1,39 @@
+﻿const mongoose = require('mongoose');
 const Partner = require('../models/Partner');
 const Showroom = require('../models/Showroom');
 const Subscription = require('../models/Subscription');
 const Media = require('../models/Media');
+const showroomService = require('./showroom.service');
 const { NotFoundError } = require('../utils/errors');
 
 /**
- * Unity API 1: List all active partners visible in the metaverse.
- * Returns companyName + profilePic URL for each.
+ * Resolve a partner by ObjectId string or companyName (case-insensitive).
+ * Only returns active partners.
+ */
+async function resolvePartner(identifier) {
+  const isObjectId =
+    typeof identifier === 'string' &&
+    identifier.length === 24 &&
+    mongoose.Types.ObjectId.isValid(identifier);
+
+  const query = isObjectId
+    ? { _id: identifier, isActive: true }
+    : { companyName: new RegExp(`^${escapeRegex(identifier)}$`, 'i'), isActive: true };
+
+  const partner = await Partner.findOne(query).select('_id companyName profilePic');
+  if (!partner) throw new NotFoundError('Partner');
+  return partner;
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ── Public API 1: getPartners ─────────────────────────────────────────────────
+/**
+ * Returns all partners that are fully set up and visible in the metaverse.
+ * isVisibleInMetaverse is true only when: active + subscription + showroom + media.
+ * No auth required — consumed by Unity lobby.
  */
 async function listActivePartners() {
   const partners = await Partner.find({ isActive: true, isVisibleInMetaverse: true })
@@ -22,91 +49,188 @@ async function listActivePartners() {
   };
 }
 
+// ── Public API 2: getShowroomSetting ──────────────────────────────────────────
 /**
- * Unity API 2: Get full partner content for Unity rendering.
- * Media and showroom panels are filtered by offer subscription limits.
+ * Returns the showroom design settings for a partner (by id or companyName).
+ * No auth required — consumed by Unity for scene construction.
  */
-async function getPartnerContent(partnerId) {
-  // ── Partner ──
-  const partner = await Partner.findOne({ _id: partnerId, isActive: true, isVisibleInMetaverse: true })
-    .select('companyName profilePic')
-    .populate('profilePic', 'url originalName');
-  if (!partner) throw new NotFoundError('Partner');
-
-  // ── Subscription + Offer limits ──
-  const subscription = await Subscription.findOne({ partner: partnerId }).populate('offer');
-  if (!subscription || !subscription.offer) throw new NotFoundError('Subscription');
-
-  const limits = {
-    maxImages: subscription.offer.maxImages,
-    maxVideos: subscription.offer.maxVideos,
-    max3dObjects: subscription.offer.max3dObjects,
-  };
-
-  // ── Determine which slots are allowed by the offer ──
-  const allowedSlots = [];
-  for (let i = 1; i <= limits.maxImages; i++) allowedSlots.push(`image${i}`);
-  for (let i = 1; i <= limits.maxVideos; i++) allowedSlots.push(`video${i}`);
-  if (limits.max3dObjects > 0) allowedSlots.push('3dmodel');
-
-  // ── Fetch media for allowed slots only ──
-  const media = await Media.find({ partner: partnerId, slot: { $in: allowedSlots } }).sort({ slot: 1 });
-  const mediaBySlot = {};
-  for (const m of media) {
-    mediaBySlot[m.slot] = { url: m.url, originalName: m.originalName, type: m.type };
-  }
-
-  // ── Showroom settings ──
-  const showroom = await Showroom.findOne({ partner: partnerId });
-
-  const formatPanel = (panel, slotName) => {
-    const isAllowed = allowedSlots.includes(slotName);
-    const item = mediaBySlot[slotName];
-    return {
-      enabled: isAllowed && (panel?.enabled || false),
-      url: isAllowed && item ? item.url : null,
-      originalName: isAllowed && item ? item.originalName : null,
-    };
-  };
+async function getShowroomByIdentifier(identifier) {
+  const partner = await resolvePartner(identifier);
+  const showroom = await Showroom.findOne({ partner: partner._id });
+  if (!showroom) throw new NotFoundError('Showroom');
 
   return {
-    partner: {
-      id: partner._id,
-      companyName: partner.companyName,
-      profilePic: partner.profilePic?.url || null,
+    partnerId: partner._id,
+    companyName: partner.companyName,
+    showroom: {
+      showroom_design: showroom.showroom_design,
+      image_panels: showroom.image_panels,
+      video_panels: showroom.video_panels,
+      model_3d: showroom.model_3d,
     },
-    subscription: {
-      offer: subscription.offer.name,
-      displayName: subscription.offer.displayName,
-      limits,
-    },
-    showroom: showroom
-      ? {
-          showroom_design: showroom.showroom_design,
-          image_panels: {
-            base_color: showroom.image_panels?.base_color || '000000',
-            scale: showroom.image_panels?.scale || 1.2,
-            panel_01: formatPanel(showroom.image_panels?.panel_01, 'image1'),
-            panel_02: formatPanel(showroom.image_panels?.panel_02, 'image2'),
-            panel_03: formatPanel(showroom.image_panels?.panel_03, 'image3'),
-            panel_04: formatPanel(showroom.image_panels?.panel_04, 'image4'),
-          },
-          video_panels: {
-            base_color: showroom.video_panels?.base_color || '000000',
-            scale: showroom.video_panels?.scale || 1,
-            panel_01: formatPanel(showroom.video_panels?.panel_01, 'video1'),
-            panel_02: formatPanel(showroom.video_panels?.panel_02, 'video2'),
-          },
-          '3d_model': {
-            enabled: allowedSlots.includes('3dmodel') && (showroom.model_3d?.enabled || false),
-            scale: showroom.model_3d?.scale || 1,
-            url: mediaBySlot['3dmodel']?.url || null,
-            originalName: mediaBySlot['3dmodel']?.originalName || null,
-          },
-        }
-      : null,
-    media: mediaBySlot,
   };
 }
 
-module.exports = { listActivePartners, getPartnerContent };
+// ── Public API 3: saveShowroomSetting ─────────────────────────────────────────
+/**
+ * Saves (upserts) the showroom design settings for a partner (by id or companyName).
+ * Accepts the same structured JSON the partner dashboard sends.
+ */
+async function saveShowroomByIdentifier(identifier, showroomData) {
+  const partner = await resolvePartner(identifier);
+  return showroomService.saveShowroom(partner._id.toString(), showroomData);
+}
+
+// ── Public API 4: getPartnerMedia ─────────────────────────────────────────────
+/**
+ * Returns all uploaded media for a partner (by id or companyName),
+ * filtered to slots allowed by their active subscription offer.
+ */
+async function getMediaByIdentifier(identifier) {
+  const partner = await resolvePartner(identifier);
+
+  const subscription = await Subscription.findOne({ partner: partner._id }).populate('offer');
+  if (!subscription || !subscription.offer || !subscription.offer.isActive) {
+    throw new NotFoundError('Active subscription');
+  }
+
+  const { maxImages, maxVideos, max3dObjects } = subscription.offer;
+
+  const allowedSlots = [];
+  for (let i = 1; i <= maxImages; i++) allowedSlots.push(`image${i}`);
+  for (let i = 1; i <= maxVideos; i++) allowedSlots.push(`video${i}`);
+  if (max3dObjects > 0) allowedSlots.push('3dmodel');
+
+  const mediaList = await Media.find({ partner: partner._id, slot: { $in: allowedSlots } })
+    .select('slot type url originalName mimeType fileSize')
+    .sort({ slot: 1 });
+
+  const bySlot = {};
+  for (const m of mediaList) {
+    bySlot[m.slot] = {
+      url: m.url,
+      type: m.type,
+      originalName: m.originalName,
+      mimeType: m.mimeType,
+      fileSize: m.fileSize,
+    };
+  }
+
+  return {
+    partnerId: partner._id,
+    companyName: partner.companyName,
+    subscription: {
+      offer: subscription.offer.name,
+      limits: { maxImages, maxVideos, max3dObjects },
+    },
+    media: bySlot,
+  };
+}
+
+module.exports = {
+  listActivePartners,
+  getShowroomByIdentifier,
+  saveShowroomByIdentifier,
+  getMediaByIdentifier,
+  getAllPartnersWorld,
+};
+
+// ── Public API 5: getAllPartnersWorld ─────────────────────────────────────────
+/**
+ * Single mega-query: returns every visible partner with their full details,
+ * showroom design, subscription info, and media — all in one response.
+ * No auth required — primary feed for Unity world loading.
+ */
+async function getAllPartnersWorld() {
+  // 1. Fetch all fully-visible partners
+  const partners = await Partner.find({ isActive: true, isVisibleInMetaverse: true })
+    .select('companyName profilePic address country city phone')
+    .populate('profilePic', 'url originalName')
+    .lean();
+
+  if (partners.length === 0) return { total: 0, partners: [] };
+
+  const partnerIds = partners.map((p) => p._id);
+
+  // 2. Batch-fetch showrooms, subscriptions and media in parallel
+  const [showrooms, subscriptions, allMedia] = await Promise.all([
+    Showroom.find({ partner: { $in: partnerIds } }).lean(),
+    Subscription.find({ partner: { $in: partnerIds } }).populate('offer').lean(),
+    Media.find({ partner: { $in: partnerIds } })
+      .select('partner slot type url originalName mimeType fileSize')
+      .lean(),
+  ]);
+
+  // 3. Index by partnerId for O(1) lookup
+  const showroomMap = {};
+  for (const s of showrooms) showroomMap[s.partner.toString()] = s;
+
+  const subscriptionMap = {};
+  for (const s of subscriptions) subscriptionMap[s.partner.toString()] = s;
+
+  const mediaMap = {};
+  for (const m of allMedia) {
+    const pid = m.partner.toString();
+    if (!mediaMap[pid]) mediaMap[pid] = {};
+    mediaMap[pid][m.slot] = {
+      url: m.url,
+      type: m.type,
+      originalName: m.originalName,
+      mimeType: m.mimeType,
+      fileSize: m.fileSize,
+    };
+  }
+
+  // 4. Assemble
+  const result = partners.map((p) => {
+    const pid = p._id.toString();
+    const sub = subscriptionMap[pid];
+    const offer = sub?.offer;
+    const showroom = showroomMap[pid];
+
+    const allowedSlots = [];
+    if (offer) {
+      for (let i = 1; i <= offer.maxImages; i++) allowedSlots.push(`image${i}`);
+      for (let i = 1; i <= offer.maxVideos; i++) allowedSlots.push(`video${i}`);
+      if (offer.max3dObjects > 0) allowedSlots.push('3dmodel');
+    }
+
+    const partnerMedia = mediaMap[pid] || {};
+    const filteredMedia = {};
+    for (const slot of allowedSlots) {
+      if (partnerMedia[slot]) filteredMedia[slot] = partnerMedia[slot];
+    }
+
+    return {
+      id: p._id,
+      companyName: p.companyName,
+      profilePic: p.profilePic?.url || null,
+      address: {
+        country: p.country || null,
+        city: p.city || null,
+      },
+      subscription: offer
+        ? {
+            offer: offer.name,
+            displayName: offer.displayName,
+            limits: {
+              maxImages: offer.maxImages,
+              maxVideos: offer.maxVideos,
+              max3dObjects: offer.max3dObjects,
+            },
+          }
+        : null,
+      showroom: showroom
+        ? {
+            showroom_design: showroom.showroom_design,
+            image_panels: showroom.image_panels,
+            video_panels: showroom.video_panels,
+            model_3d: showroom.model_3d,
+          }
+        : null,
+      media: filteredMedia,
+    };
+  });
+
+  return { total: result.length, partners: result };
+}

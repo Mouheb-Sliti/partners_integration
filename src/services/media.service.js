@@ -2,7 +2,6 @@ const path = require('path');
 const fs = require('fs');
 const Media = require('../models/Media');
 const Partner = require('../models/Partner');
-const Showroom = require('../models/Showroom');
 const { NotFoundError, ValidationError } = require('../utils/errors');
 const { recomputeVisibility } = require('./metaverse.service');
 
@@ -12,17 +11,6 @@ const SLOT_TYPE_MAP = {
   video1: 'video', video2: 'video',
   '3dmodel': '3dmodel',
   profile_image: 'image',
-};
-
-// Maps media slots to their corresponding showroom panel paths
-const SLOT_TO_SHOWROOM = {
-  image1: 'image_panels.panel_01',
-  image2: 'image_panels.panel_02',
-  image3: 'image_panels.panel_03',
-  image4: 'image_panels.panel_04',
-  video1: 'video_panels.panel_01',
-  video2: 'video_panels.panel_02',
-  '3dmodel': 'model_3d',
 };
 
 async function listMedia(partnerId) {
@@ -83,15 +71,6 @@ async function uploadMedia(partnerId, file, slot, uploadDir) {
     await Partner.findByIdAndUpdate(partnerId, { profilePic: media._id });
   }
 
-  // Auto-link to showroom panel
-  const showroomPath = SLOT_TO_SHOWROOM[slot];
-  if (showroomPath) {
-    await Showroom.findOneAndUpdate(
-      { partner: partnerId },
-      { [`${showroomPath}.media`]: media._id, [`${showroomPath}.enabled`]: true }
-    );
-  }
-
   await recomputeVisibility(partnerId);
 
   return { slot, media };
@@ -109,15 +88,6 @@ async function deleteMedia(partnerId, mediaId, uploadDir) {
   // If profile_image, clear partner ref
   if (media.slot === 'profile_image') {
     await Partner.findByIdAndUpdate(partnerId, { profilePic: null });
-  }
-
-  // Clear showroom panel
-  const showroomPath = SLOT_TO_SHOWROOM[media.slot];
-  if (showroomPath) {
-    await Showroom.findOneAndUpdate(
-      { partner: partnerId },
-      { [`${showroomPath}.media`]: null, [`${showroomPath}.enabled`]: false }
-    );
   }
 
   await media.deleteOne();
