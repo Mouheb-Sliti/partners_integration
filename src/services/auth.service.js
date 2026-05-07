@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Partner = require('../models/Partner');
 const Showroom = require('../models/Showroom');
+const Media = require('../models/Media');
+const Subscription = require('../models/Subscription');
 const config = require('../config');
 const { ConflictError, UnauthorizedError, ForbiddenError, NotFoundError } = require('../utils/errors');
 const { recomputeVisibility } = require('./metaverse.service');
@@ -50,11 +52,64 @@ async function login({ email, password }) {
 }
 
 async function getProfile(partnerId) {
-  const partner = await Partner.findById(partnerId).select('-passwordHash').populate('profilePic');
+  const [partner, showroom, subscription, mediaDocs] = await Promise.all([
+    Partner.findById(partnerId).select('-passwordHash').populate('profilePic'),
+    Showroom.findOne({ partner: partnerId }),
+    Subscription.findOne({ partner: partnerId }).populate('offer'),
+    Media.find({ partner: partnerId }).sort({ slot: 1 }),
+  ]);
+
   if (!partner) {
     throw new NotFoundError('Partner');
   }
-  return { partner };
+
+  const mediaBySlot = {};
+  for (const m of mediaDocs) {
+    if (m.slot === 'profile_image') continue;
+
+    mediaBySlot[m.slot] = {
+      _id: m._id,
+      url: m.url,
+      type: m.type,
+      originalName: m.originalName,
+      mimeType: m.mimeType,
+      fileSize: m.fileSize,
+      productName: m.productName ?? null,
+      price: typeof m.price === 'number' ? m.price : null,
+      description: m.description ?? null,
+    };
+  }
+
+  return {
+    partner,
+    showroom: showroom
+      ? {
+          showroom_design: showroom.showroom_design,
+          image_panels: showroom.image_panels,
+          video_panels: showroom.video_panels,
+          model_3d: showroom.model_3d,
+        }
+      : null,
+    subscription: subscription?.offer
+      ? {
+          id: subscription._id,
+          offerId: subscription.offer._id,
+          offerName: subscription.offer.name,
+          displayName: subscription.offer.displayName,
+          maxImages: subscription.offer.maxImages,
+          maxVideos: subscription.offer.maxVideos,
+          max3dObjects: subscription.offer.max3dObjects,
+          subscribedAt: subscription.subscribedAt,
+        }
+      : null,
+    media: {
+      total: mediaDocs.filter((m) => m.slot !== 'profile_image').length,
+      profile_image: partner.profilePic
+        ? { url: partner.profilePic.url, originalName: partner.profilePic.originalName }
+        : null,
+      items: mediaBySlot,
+    },
+  };
 }
 
 async function updateProfile(partnerId, updates) {

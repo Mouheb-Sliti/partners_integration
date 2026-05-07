@@ -116,7 +116,6 @@ async function getMediaByIdentifier(identifier) {
       productName: m.productName || null,
       price: typeof m.price === 'number' ? m.price : null,
       description: m.description || null,
-      descirption: m.description || null,
     };
   }
 
@@ -185,7 +184,6 @@ async function getAllPartnersWorld() {
       productName: m.productName || null,
       price: typeof m.price === 'number' ? m.price : null,
       description: m.description || null,
-      descirption: m.description || null,
     };
   }
 

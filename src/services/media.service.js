@@ -103,8 +103,7 @@ async function update3dModelMetadata(partnerId, payload) {
   }
 
   const productName = typeof payload.productName === 'string' ? payload.productName.trim() : '';
-  const descriptionInput = payload.description ?? payload.descirption;
-  const description = typeof descriptionInput === 'string' ? descriptionInput.trim() : '';
+  const description = typeof payload.description === 'string' ? payload.description.trim() : '';
   const price = Number(payload.price);
 
   if (!productName) {
@@ -134,7 +133,6 @@ async function update3dModelMetadata(partnerId, payload) {
       productName: media.productName,
       price: media.price,
       description: media.description,
-      descirption: media.description,
     },
   };
 }
