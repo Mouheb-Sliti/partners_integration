@@ -102,7 +102,7 @@ async function getMediaByIdentifier(identifier) {
   if (max3dObjects > 0) allowedSlots.push('3dmodel');
 
   const mediaList = await Media.find({ partner: partner._id, slot: { $in: allowedSlots } })
-    .select('slot type url originalName mimeType fileSize')
+    .select('slot type url originalName mimeType fileSize productName price description')
     .sort({ slot: 1 });
 
   const bySlot = {};
@@ -113,6 +113,10 @@ async function getMediaByIdentifier(identifier) {
       originalName: m.originalName,
       mimeType: m.mimeType,
       fileSize: m.fileSize,
+      productName: m.productName || null,
+      price: typeof m.price === 'number' ? m.price : null,
+      description: m.description || null,
+      descirption: m.description || null,
     };
   }
 
@@ -157,7 +161,7 @@ async function getAllPartnersWorld() {
     Showroom.find({ partner: { $in: partnerIds } }).lean(),
     Subscription.find({ partner: { $in: partnerIds } }).populate('offer').lean(),
     Media.find({ partner: { $in: partnerIds } })
-      .select('partner slot type url originalName mimeType fileSize')
+      .select('partner slot type url originalName mimeType fileSize productName price description')
       .lean(),
   ]);
 
@@ -178,6 +182,10 @@ async function getAllPartnersWorld() {
       originalName: m.originalName,
       mimeType: m.mimeType,
       fileSize: m.fileSize,
+      productName: m.productName || null,
+      price: typeof m.price === 'number' ? m.price : null,
+      description: m.description || null,
+      descirption: m.description || null,
     };
   }
 

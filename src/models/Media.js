@@ -12,6 +12,9 @@ const mediaSchema = new mongoose.Schema(
     fileSize: { type: Number, required: true },
     filename: { type: String, required: true },   // stored filename on disk
     url: { type: String, required: true },         // public-accessible path
+    productName: { type: String, trim: true },
+    price: { type: Number, min: 0 },
+    description: { type: String, trim: true },
   },
   { timestamps: true }
 );

@@ -96,6 +96,49 @@ async function deleteMedia(partnerId, mediaId, uploadDir) {
   return { message: 'Media deleted' };
 }
 
+async function update3dModelMetadata(partnerId, payload) {
+  const media = await Media.findOne({ partner: partnerId, slot: '3dmodel' });
+  if (!media) {
+    throw new NotFoundError('3D model media');
+  }
+
+  const productName = typeof payload.productName === 'string' ? payload.productName.trim() : '';
+  const descriptionInput = payload.description ?? payload.descirption;
+  const description = typeof descriptionInput === 'string' ? descriptionInput.trim() : '';
+  const price = Number(payload.price);
+
+  if (!productName) {
+    throw new ValidationError('productName is required');
+  }
+  if (!description) {
+    throw new ValidationError('description is required');
+  }
+  if (!Number.isFinite(price) || price < 0) {
+    throw new ValidationError('price must be a non-negative number');
+  }
+
+  media.productName = productName;
+  media.description = description;
+  media.price = price;
+  await media.save();
+
+  return {
+    slot: media.slot,
+    media: {
+      _id: media._id,
+      url: media.url,
+      type: media.type,
+      originalName: media.originalName,
+      mimeType: media.mimeType,
+      fileSize: media.fileSize,
+      productName: media.productName,
+      price: media.price,
+      description: media.description,
+      descirption: media.description,
+    },
+  };
+}
+
 function cleanupFile(filePath) {
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -104,4 +147,4 @@ function cleanupFile(filePath) {
   }
 }
 
-module.exports = { listMedia, uploadMedia, deleteMedia };
+module.exports = { listMedia, uploadMedia, deleteMedia, update3dModelMetadata };

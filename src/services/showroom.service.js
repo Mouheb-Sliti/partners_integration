@@ -20,8 +20,10 @@ const MEDIA_UNSET_FIELDS = [
   'model_3d.media',
 ];
 
-function stripMedia(doc) {
-  const obj = doc.toObject();
+function formatShowroom(doc) {
+  const obj = doc.toObject({ virtuals: false });
+
+  // Strip media refs from panels
   ['panel_01', 'panel_02', 'panel_03', 'panel_04'].forEach((p) => {
     if (obj.image_panels?.[p]) delete obj.image_panels[p].media;
   });
@@ -29,13 +31,26 @@ function stripMedia(doc) {
     if (obj.video_panels?.[p]) delete obj.video_panels[p].media;
   });
   if (obj.model_3d) delete obj.model_3d.media;
-  return obj;
+
+  // Return only the fields Unity/clients actually need
+  return {
+    _id: obj._id,
+    partner: {
+      _id: obj.partner._id ?? obj.partner,
+      companyName: obj.partner.companyName ?? undefined,
+    },
+    showroom_design: obj.showroom_design,
+    image_panels:   obj.image_panels,
+    video_panels:   obj.video_panels,
+    model_3d:       obj.model_3d,
+  };
 }
 
 async function getShowroom(partnerId) {
-  const showroom = await Showroom.findOne({ partner: partnerId });
+  const showroom = await Showroom.findOne({ partner: partnerId })
+    .populate('partner', 'companyName');
   if (!showroom) throw new NotFoundError('Showroom');
-  return { showroom: stripMedia(showroom) };
+  return { showroom: formatShowroom(showroom) };
 }
 
 async function saveShowroom(partnerId, showroomData) {
@@ -97,7 +112,9 @@ async function saveShowroom(partnerId, showroomData) {
     { new: true, upsert: true }
   );
 
-  return { showroom: stripMedia(showroom) };
+  await showroom.populate('partner', 'companyName');
+
+  return { showroom: formatShowroom(showroom) };
 }
 
 module.exports = { getShowroom, saveShowroom };

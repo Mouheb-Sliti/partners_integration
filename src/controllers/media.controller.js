@@ -41,4 +41,13 @@ async function deleteMedia(req, res, next) {
   }
 }
 
-module.exports = { listMedia, uploadMedia, deleteMedia };
+async function update3dModelMetadata(req, res, next) {
+  try {
+    const result = await mediaService.update3dModelMetadata(req.partner.id, req.body || {});
+    success(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listMedia, uploadMedia, deleteMedia, update3dModelMetadata };

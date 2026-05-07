@@ -52,6 +52,9 @@ router.get('/', authenticate, mediaController.listMedia);
 // POST /media — upload a single file to a named slot (image1..4, video1..2, 3dmodel, profile_image)
 router.post('/', authenticate, upload.fields(UPLOAD_FIELDS), mediaController.uploadMedia);
 
+// PUT /media/3dmodel/metadata — set product metadata for the uploaded 3D model
+router.put('/3dmodel/metadata', authenticate, mediaController.update3dModelMetadata);
+
 // DELETE /media/:id — delete a media file
 router.delete('/:id', authenticate, mediaController.deleteMedia);
 
